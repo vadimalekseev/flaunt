@@ -1,0 +1,8 @@
+[package]
+name = "flaunt"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tinytemplate = "1.2.1"
+serde = { version = "1.0.137", features = ["derive"] }
