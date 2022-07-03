@@ -17,7 +17,7 @@ impl fmt::Display for ParseError {
 pub enum Operation {
     Assign,
     Identifier,
-    String,
+    Value,
 }
 
 #[derive(Debug)]
@@ -33,9 +33,12 @@ impl PartialEq for Token {
 }
 
 enum State {
-    Begin,
-    AssignStart,
+    BeforeIdentifierStart,
     IdentifierStart,
+    BeforeAssignStart,
+    AssignStart,
+    BeforeValueStart,
+    ValueStart,
 }
 pub struct Lexer {
     state: State,
@@ -48,7 +51,7 @@ impl Lexer {
     pub fn new() -> Self {
         Self {
             start: 0,
-            state: State::Begin,
+            state: State::BeforeIdentifierStart,
         }
     }
 
@@ -61,45 +64,64 @@ impl Lexer {
 
         for (i, c) in line.chars().enumerate().skip(BEGIN.len()) {
             match self.state {
-                State::Begin => {
-                    self.state = State::IdentifierStart;
+                State::BeforeIdentifierStart | State::BeforeAssignStart | State::BeforeValueStart => {
+                    if c == ' ' {
+                        continue;
+                    }
                     self.start = i;
+
+                    match self.state {
+                        State::BeforeIdentifierStart => self.state = State::IdentifierStart,
+                        State::BeforeAssignStart => self.state = State::AssignStart,
+                        State::BeforeValueStart => self.state = State::ValueStart,
+                        _ => unreachable!()
+                    }
                 }
 
                 State::IdentifierStart => {
-                    if c != ':' {
-                        continue;
+                    match line.get(i+1..i+2) {
+                        Option::Some(s) => {
+                            if s != ":" {
+                                continue;
+                            }
+
+                            result.push(Token {
+                                operation: Operation::Identifier,
+                                value: line.get(self.start..i).unwrap().to_string(),
+                            });
+
+                            self.state = State::BeforeAssignStart;
+                        }
+                        Option::None => {}
                     }
 
-                    result.push(Token {
-                        operation: Operation::Identifier,
-                        value: line.get(self.start..i).unwrap().to_string(),
-                    });
-
-                    result.push(Token {
-                        operation: Operation::Assign,
-                        value: c.to_string(),
-                    });
-
-                    self.state = State::AssignStart;
-                    self.start = i;
                 }
 
                 State::AssignStart => {
-                    if c == ' ' || c != ',' {
+                    result.push(Token {
+                        operation: Operation::Assign,
+                        value: line.get(self.start..self.start+1).unwrap().to_string(),
+                    });
+
+                    self.state = State::BeforeValueStart;
+                }
+
+                State::ValueStart => {
+                    if c != ',' && i != line.len()-1 {
                         continue;
                     }
-
                     result.push(Token {
-                        operation: Operation::String,
-                        value: line.get(self.start..i).unwrap().to_string(),
-                    })
+                        operation: Operation::Value,
+                        value: line.get(self.start..i+1).unwrap().to_string(),
+                    });
+                    self.state = State::BeforeIdentifierStart;
+                    self.start = i
                 }
             }
         }
         match self.state {
             State::AssignStart => result.push(Token {
-                operation: Operation::String,
+                operation: Operation::Value,
                 value: line.get(self.start..).unwrap().to_string(),
             }),
             _ => {}
@@ -119,7 +141,7 @@ mod tests {
     fn it_works() {
         let mut l = Lexer::new();
 
-        let res = l.parse_line("// language: rust".to_string());
+        let res = l.parse_line("//language:rust".to_string());
         assert!(res.is_ok());
 
         let mut got = res.unwrap();
@@ -133,18 +155,55 @@ mod tests {
                 value: ":".to_string(),
             },
             Token {
-                operation: Operation::String,
+                operation: Operation::Value,
                 value: "rust".to_string(),
             },
         ];
 
-        assert!(
-            got.len() == expected.len(),
-            "got = {:?}, expected = {:?}",
+        println!(
+            "\ngot = {:?}\nexpected = {:?}\n",
             got,
-            expected
+            expected,
         );
 
-        assert_eq!(got.pop(), expected.pop())
+        assert!(got.len() == expected.len());
+        assert_eq!(got.pop(), expected.pop());
+        assert_eq!(got.pop(), expected.pop());
+        assert_eq!(got.pop(), expected.pop());
+    }
+
+    #[test]
+    fn it_works_with_spaces() {
+        let mut l = Lexer::new();
+
+        let res = l.parse_line("// language : rust".to_string());
+        assert!(res.is_ok());
+
+        let mut got = res.unwrap();
+        let mut expected = vec![
+            Token {
+                operation: Operation::Identifier,
+                value: "language".to_string(),
+            },
+            Token {
+                operation: Operation::Assign,
+                value: ":".to_string(),
+            },
+            Token {
+                operation: Operation::Value,
+                value: "rust".to_string(),
+            },
+        ];
+
+        println!(
+            "\ngot = {:?}\nexpected = {:?}\n",
+            got,
+            expected,
+        );
+
+        assert!(got.len() == expected.len());
+        assert_eq!(got.pop(), expected.pop());
+        assert_eq!(got.pop(), expected.pop());
+        assert_eq!(got.pop(), expected.pop());
     }
 }
