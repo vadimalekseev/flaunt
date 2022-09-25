@@ -1,11 +1,9 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fs;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::path::Path;
 use std::str::FromStr;
-
-use crate::Difficult::{Easy, Hard, Medium};
 
 struct Problem {
     id: String,
@@ -13,30 +11,9 @@ struct Problem {
     solvings: Vec<Solving>,
 }
 
-impl PartialEq for Problem {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.difficult == other.difficult
-    }
-}
-
-impl Eq for Problem {}
-
-impl Hash for Problem {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-        self.difficult.hash(state);
-    }
-
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
-    {
-        data.hash(state)
-    }
-}
-
 struct Solving {
     language: String,
+    path: String,
     comment: Option<String>,
 }
 
@@ -70,10 +47,10 @@ fn main() {
             let content = fs::read_to_string(solving_file.path()).unwrap();
 
             let path = solving_file.path();
-            let extension = path.extension().unwrap();
-            let leetcode_id = path.file_stem().unwrap().to_str().unwrap().to_string(); // TODO: simplify this
+            let leetcode_id = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            let solving_info = parse_solving(extension.to_str().unwrap().to_string(), content);
+            let stripped_path = path.strip_prefix(folder_path).unwrap();
+            let solving_info = parse_solving(stripped_path, content);
 
             match problems.entry(leetcode_id.to_owned()) {
                 Entry::Occupied(mut e) => {
@@ -132,9 +109,9 @@ impl FromStr for Difficult {
 
     fn from_str(input: &str) -> Result<Difficult, Self::Err> {
         match input {
-            "hard" => Ok(Hard),
-            "medium" => Ok(Medium),
-            "easy" => Ok(Easy),
+            "hard" => Ok(Difficult::Hard),
+            "medium" => Ok(Difficult::Medium),
+            "easy" => Ok(Difficult::Easy),
             _ => Err(()),
         }
     }
@@ -143,14 +120,33 @@ impl FromStr for Difficult {
 impl Difficult {
     fn to_str(&self) -> String {
         return match self {
-            Hard => "Hard".to_string(),
-            Medium => "Medium".to_string(),
-            Easy => "Easy".to_string(),
+            Difficult::Hard => "Hard".to_string(),
+            Difficult::Medium => "Medium".to_string(),
+            Difficult::Easy => "Easy".to_string(),
         };
     }
 }
 
-fn parse_solving(language: String, solving: String) -> Solving {
+// todo: allow user mappings
+fn map_lang(s: &str) -> &str {
+    match s {
+        "rs" => "Rust",
+        "cs" => "C#",
+        "go" => "Go",
+        "py" => "Python",
+        "js" => "JS",
+        "ts" => "TS",
+        "rb" => "Ruby",
+        "cpp" => "C++",
+        "c" => "C",
+        "sql" => "SQL",
+        _ => s,
+    }
+}
+
+fn parse_solving(path: &Path, solving: String) -> Solving {
+    let extension = path.extension().unwrap();
+
     let first_comment = solving
         .lines()
         .take_while(|x| x.starts_with("//") || x.starts_with("--") || x.starts_with("##"))
@@ -161,7 +157,11 @@ fn parse_solving(language: String, solving: String) -> Solving {
         None => None,
     };
 
-    return Solving { language, comment };
+    return Solving {
+        comment,
+        path: path.to_str().unwrap().to_string(),
+        language: map_lang(extension.to_str().unwrap()).to_string(),
+    };
 }
 
 fn pascal_case(s: &String) -> String {
@@ -169,7 +169,8 @@ fn pascal_case(s: &String) -> String {
         .to_owned()
         .split("-")
         .map(|s| format!("{}{}", (&s[..1].to_string()).to_uppercase(), &s[1..]))
-        .collect();
+        .collect::<Vec<String>>()
+        .join(" ");
 }
 
 fn leetcode_problem_url(problem: &String) -> String {
@@ -190,7 +191,7 @@ fn generate_table_body(problems: Vec<&Problem>) -> String {
                         Some(v) => format!("({v})"),
                         None => String::from(""),
                     };
-                    format!("{}{}", x.language, comment)
+                    format!("({})[{}]{}", x.language, x.path, comment)
                 })
                 .collect::<Vec<String>>()
                 .join(", ");
@@ -226,10 +227,14 @@ fn generate_solvings_table(summary: &str, problems: Vec<&Problem>) -> String {
 
 fn generate(problems: HashMap<String, Problem>) -> String {
     let total = problems.len();
-    let all_solvings = generate_solvings_table("All solvings", problems.values().collect());
+    let mut all_problems = problems.values().collect::<Vec<&Problem>>();
+    all_problems.sort_by(|x1, x2| x1.id.cmp(&x2.id));
+    let all_problems = all_problems.into_iter();
 
-    let hard: Vec<&Problem> = problems
-        .values()
+    let all_solvings = generate_solvings_table("All solvings", all_problems.to_owned().collect());
+
+    let hard: Vec<&Problem> = all_problems
+        .to_owned()
         .filter(|x| match x.difficult {
             Difficult::Hard => true,
             _ => false,
@@ -238,8 +243,9 @@ fn generate(problems: HashMap<String, Problem>) -> String {
     let hard_total = hard.len();
     let hard_solvings = generate_solvings_table("Hard", hard);
 
-    let medium: Vec<&Problem> = problems
-        .values()
+    let medium: Vec<&Problem> = all_problems
+        .to_owned()
+        .into_iter()
         .filter(|x| match x.difficult {
             Difficult::Medium => true,
             _ => false,
@@ -248,8 +254,9 @@ fn generate(problems: HashMap<String, Problem>) -> String {
     let medium_total = medium.len();
     let medium_solvings = generate_solvings_table("Medium", medium);
 
-    let easy: Vec<&Problem> = problems
-        .values()
+    let easy: Vec<&Problem> = all_problems
+        .to_owned()
+        .into_iter()
         .filter(|x| match x.difficult {
             Difficult::Easy => true,
             _ => false,
