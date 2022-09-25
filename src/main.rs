@@ -44,14 +44,16 @@ fn main() {
             .into_iter()
             .filter_map(|x| x.ok())
         {
-            let content = fs::read_to_string(solving_file.path()).unwrap();
-
             let path = solving_file.path();
-            let leetcode_id = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            let stripped_path = path.strip_prefix(folder_path).unwrap();
+            let mut ancestors = folder_path.ancestors();
+            ancestors.next(); // skip basename in the path
+            let stripped_path = path.strip_prefix(ancestors.next().unwrap()).unwrap();
+
+            let content = fs::read_to_string(solving_file.path()).unwrap();
             let solving_info = parse_solving(stripped_path, content);
 
+            let leetcode_id = path.file_stem().unwrap().to_str().unwrap().to_string();
             match problems.entry(leetcode_id.to_owned()) {
                 Entry::Occupied(mut e) => {
                     e.get_mut().solvings.push(solving_info);
@@ -188,10 +190,10 @@ fn generate_table_body(problems: Vec<&Problem>) -> String {
                 .iter()
                 .map(|x| {
                     let comment = match x.comment.to_owned() {
-                        Some(v) => format!("({v})"),
+                        Some(v) => format!(" ({v})"),
                         None => String::from(""),
                     };
-                    format!("({})[{}]{}", x.language, x.path, comment)
+                    format!("[{}]({}){}", x.language, x.path, comment)
                 })
                 .collect::<Vec<String>>()
                 .join(", ");
@@ -276,8 +278,7 @@ fn generate(problems: HashMap<String, Problem>) -> String {
 {medium_solvings}
 ## Number of "Easy" solved problems 🥱: {easy_total}
 {easy_solvings}
-
-This file was generated automatically by [flaunt](https://github.com/vadimalekseev/flaunt).
+Generated automatically by [flaunt](https://github.com/vadimalekseev/flaunt).
 "#
     );
 }
