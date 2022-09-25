@@ -17,6 +17,33 @@ struct Solving {
     comment: Option<String>,
 }
 
+struct Args {
+    folder: String,
+}
+
+fn parse_args() -> Args {
+    let args = std::env::args().collect::<Vec<_>>();
+
+    let mut folder = ".".to_string();
+    let mut next_folder = false;
+
+    for arg in args.get(1..).unwrap() {
+        if arg == "--folder" {
+            next_folder = true;
+            continue;
+        }
+        if next_folder {
+            folder = arg.clone();
+            next_folder = false;
+            continue;
+        }
+
+        panic!("exta arguments. Usage: flaunt --folder /path/to/solving");
+    }
+
+    return Args { folder };
+}
+
 fn main() {
     let args = parse_args();
 
@@ -72,63 +99,6 @@ fn main() {
     println!("{}", generate(problems))
 }
 
-struct Args {
-    folder: String,
-}
-
-fn parse_args() -> Args {
-    let args = std::env::args().collect::<Vec<_>>();
-
-    let mut folder = ".".to_string();
-    let mut next_folder = false;
-
-    for arg in args.get(1..).unwrap() {
-        if arg == "--folder" {
-            next_folder = true;
-            continue;
-        }
-        if next_folder {
-            folder = arg.clone();
-            next_folder = false;
-            continue;
-        }
-
-        panic!("exta arguments. Usage: flaunt --folder /path/to/solving");
-    }
-
-    return Args { folder };
-}
-
-#[derive(PartialEq, Eq, Hash)]
-enum Difficult {
-    Hard,
-    Medium,
-    Easy,
-}
-
-impl FromStr for Difficult {
-    type Err = ();
-
-    fn from_str(input: &str) -> Result<Difficult, Self::Err> {
-        match input {
-            "hard" => Ok(Difficult::Hard),
-            "medium" => Ok(Difficult::Medium),
-            "easy" => Ok(Difficult::Easy),
-            _ => Err(()),
-        }
-    }
-}
-
-impl Difficult {
-    fn to_str(&self) -> String {
-        return match self {
-            Difficult::Hard => "Hard".to_string(),
-            Difficult::Medium => "Medium".to_string(),
-            Difficult::Easy => "Easy".to_string(),
-        };
-    }
-}
-
 // todo: allow user mappings
 fn map_lang(s: &str) -> &str {
     match s {
@@ -166,17 +136,97 @@ fn parse_solving(path: &Path, solving: String) -> Solving {
     };
 }
 
-fn pascal_case(s: &String) -> String {
-    return s
-        .to_owned()
-        .split("-")
-        .map(|s| format!("{}{}", (&s[..1].to_string()).to_uppercase(), &s[1..]))
-        .collect::<Vec<String>>()
-        .join(" ");
+#[derive(PartialEq, Eq, Hash)]
+enum Difficult {
+    Hard,
+    Medium,
+    Easy,
 }
 
-fn leetcode_problem_url(problem: &String) -> String {
-    format!("https://leetcode.com/problems/{}", problem)
+impl FromStr for Difficult {
+    type Err = ();
+
+    fn from_str(input: &str) -> Result<Difficult, Self::Err> {
+        match input {
+            "hard" => Ok(Difficult::Hard),
+            "medium" => Ok(Difficult::Medium),
+            "easy" => Ok(Difficult::Easy),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Difficult {
+    fn to_str(&self) -> String {
+        return match self {
+            Difficult::Hard => "Hard".to_string(),
+            Difficult::Medium => "Medium".to_string(),
+            Difficult::Easy => "Easy".to_string(),
+        };
+    }
+}
+
+fn generate(problems: HashMap<String, Problem>) -> String {
+    let total = problems.len();
+    let mut all_problems = problems.values().collect::<Vec<&Problem>>();
+    all_problems.sort_by(|x1, x2| x1.id.cmp(&x2.id));
+    let all_problems = all_problems.into_iter();
+
+    let all_solvings = generate_solvings_table("All solvings", all_problems.to_owned().collect());
+
+    let hard: Vec<&Problem> = all_problems
+        .to_owned()
+        .filter(|x| match x.difficult {
+            Difficult::Hard => true,
+            _ => false,
+        })
+        .collect();
+    let hard_total = hard.len();
+    let hard_solvings = generate_solvings_table("Hard", hard);
+
+    let medium: Vec<&Problem> = all_problems
+        .to_owned()
+        .into_iter()
+        .filter(|x| match x.difficult {
+            Difficult::Medium => true,
+            _ => false,
+        })
+        .collect();
+    let medium_total = medium.len();
+    let medium_solvings = generate_solvings_table("Medium", medium);
+
+    let easy: Vec<&Problem> = all_problems
+        .to_owned()
+        .into_iter()
+        .filter(|x| match x.difficult {
+            Difficult::Easy => true,
+            _ => false,
+        })
+        .collect();
+    let easy_total = easy.len();
+    let easy_solvings = generate_solvings_table("Easy", easy);
+
+    let by_languages = all_problems
+        .to_owned()
+        .into_iter()
+        .map(|x| x.solvings.iter().map(move |y| (y.language.to_owned(), x)))
+        .flatten()
+        .collect::<HashMap<String, &Problem>>();
+
+    return format!(
+        r#"# This repo contains my leetcode problem solving tasks
+
+## Number of all solved problems 📈: {total}
+{all_solvings}
+## Number of "Hard" solved problems 🤯: {hard_total}
+{hard_solvings}
+## Number of "Medium" solved problems 😨: {medium_total}
+{medium_solvings}
+## Number of "Easy" solved problems 🥱: {easy_total}
+{easy_solvings}
+Generated automatically by [flaunt](https://github.com/vadimalekseev/flaunt).
+"#
+    );
 }
 
 fn generate_table_body(problems: Vec<&Problem>) -> String {
@@ -227,58 +277,15 @@ fn generate_solvings_table(summary: &str, problems: Vec<&Problem>) -> String {
     );
 }
 
-fn generate(problems: HashMap<String, Problem>) -> String {
-    let total = problems.len();
-    let mut all_problems = problems.values().collect::<Vec<&Problem>>();
-    all_problems.sort_by(|x1, x2| x1.id.cmp(&x2.id));
-    let all_problems = all_problems.into_iter();
-
-    let all_solvings = generate_solvings_table("All solvings", all_problems.to_owned().collect());
-
-    let hard: Vec<&Problem> = all_problems
+fn pascal_case(s: &String) -> String {
+    return s
         .to_owned()
-        .filter(|x| match x.difficult {
-            Difficult::Hard => true,
-            _ => false,
-        })
-        .collect();
-    let hard_total = hard.len();
-    let hard_solvings = generate_solvings_table("Hard", hard);
+        .split("-")
+        .map(|s| format!("{}{}", (&s[..1].to_string()).to_uppercase(), &s[1..]))
+        .collect::<Vec<String>>()
+        .join(" ");
+}
 
-    let medium: Vec<&Problem> = all_problems
-        .to_owned()
-        .into_iter()
-        .filter(|x| match x.difficult {
-            Difficult::Medium => true,
-            _ => false,
-        })
-        .collect();
-    let medium_total = medium.len();
-    let medium_solvings = generate_solvings_table("Medium", medium);
-
-    let easy: Vec<&Problem> = all_problems
-        .to_owned()
-        .into_iter()
-        .filter(|x| match x.difficult {
-            Difficult::Easy => true,
-            _ => false,
-        })
-        .collect();
-    let easy_total = easy.len();
-    let easy_solvings = generate_solvings_table("Easy", easy);
-
-    return format!(
-        r#"# This repo contains my leetcode problem solving tasks
-
-## Number of all solved problems 📈: {total}
-{all_solvings}
-## Number of "Hard" solved problems 🤯: {hard_total}
-{hard_solvings}
-## Number of "Medium" solved problems 😨: {medium_total}
-{medium_solvings}
-## Number of "Easy" solved problems 🥱: {easy_total}
-{easy_solvings}
-Generated automatically by [flaunt](https://github.com/vadimalekseev/flaunt).
-"#
-    );
+fn leetcode_problem_url(problem: &String) -> String {
+    format!("https://leetcode.com/problems/{}", problem)
 }
