@@ -16,6 +16,6 @@ It requires next folder structure:
 flaunt --folder ~/path/to/solvings
 ```
 
-## Exapmle:
+## Example:
 
 https://github.com/vadimalekseev/leetcode
